@@ -4,3 +4,9 @@ clang/
 los-4.9-32/
 los-4.9-64/
 out/
+
+# build outputs
+/out/
+/out-bakasu/
+/clang/
+/AnyKernel3/

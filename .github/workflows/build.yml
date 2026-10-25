@@ -1,0 +1,149 @@
+name: Build Kernel (BakaSU + SUSFS 2.3.0)
+
+on:
+  push:
+    branches: [ '**' ]
+    tags-ignore: [ '**' ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    env:
+      CCACHE_MAXSIZE: 4G
+      CCACHE_NOHASHDIR: "true"
+      CCACHE_HARDLINK: "true"
+      CCACHE_NOCOMPRESS: "true"
+      CCACHE_DIR: /home/runner/.ccache
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Sync BakaSU submodule to latest main
+        run: |
+          if git -C drivers/BakaSU rev-parse --is-shallow-repository | grep -q true; then
+            git -C drivers/BakaSU fetch --unshallow origin || true
+          fi
+          git -C drivers/BakaSU fetch origin main
+          git -C drivers/BakaSU checkout --detach origin/main
+          echo "BakaSU HEAD: $(git -C drivers/BakaSU log -1 --format='%h %s')"
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison flex libssl-dev ccache zip gcc-aarch64-linux-gnu
+          aarch64-linux-gnu-gcc --version | head -1
+
+      - name: Restore ccache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.ccache
+          key: ccache-${{ runner.os }}-${{ hashFiles('arch/arm64/configs/pissarro_user_defconfig') }}-${{ github.run_id }}
+          restore-keys: |
+            ccache-${{ runner.os }}-${{ hashFiles('arch/arm64/configs/pissarro_user_defconfig') }}-
+            ccache-${{ runner.os }}-
+
+      - name: Setup toolchain (proton-clang)
+        run: |
+          git clone --depth=1 https://github.com/kdrag0n/proton-clang clang
+          echo "$PWD/clang/bin" >> "$GITHUB_PATH"
+          export PATH="$PWD/clang/bin:$PATH"
+          clang --version | head -1
+          ccache -M 4G
+          ccache -z
+
+      - name: Generate .config
+        run: |
+          make O=out ARCH=arm64 CC="ccache clang" CROSS_COMPILE=aarch64-linux-gnu- pissarro_user_defconfig
+          scripts/config --file out/.config --enable CONFIG_KSU
+          scripts/config --file out/.config --enable CONFIG_KSU_SUSFS
+          scripts/config --file out/.config --enable CONFIG_KALLSYMS_ALL
+          make O=out ARCH=arm64 CC="ccache clang" CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
+          grep -E "^CONFIG_(KSU|KSU_SUSFS|KALLSYMS_ALL|ARCH_MTK_PROJECT)" out/.config
+
+      - name: Build kernel
+        run: |
+          set -o pipefail
+          make -j$(nproc) O=out ARCH=arm64 \
+            CC="ccache clang" \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            LD=ld.lld AS=llvm-as AR=llvm-ar NM=llvm-nm \
+            OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
+            KCFLAGS="-Wno-error=implicit-function-declaration -Wno-error=incompatible-pointer-types -Wno-error=int-conversion" \
+            CONFIG_SECTION_MISMATCH_WARN_ONLY=y \
+            Image.gz-dtb 2>&1 | tee /tmp/build.log
+
+      - name: Report versions
+        run: |
+          VCODE=$(grep -oE "BakaSU version code: [0-9]+" /tmp/build.log | head -1 | awk '{print $NF}')
+          VNAME=$(grep -oE "BakaSU version name: .+" /tmp/build.log | head -1 | sed 's/.*name: //')
+          HOOK=$(grep -oE "BakaSU: using [A-Za-z ]+" /tmp/build.log | head -1 | sed 's/.*using //')
+          SUSVER=$(grep -E '^#define SUSFS_VERSION' include/linux/susfs.h | cut -d'"' -f2)
+          echo "vcode=$VCODE" >> "$GITHUB_ENV"
+          echo "susver=$SUSVER" >> "$GITHUB_ENV"
+          {
+            echo "## BakaSU 构建信息"
+            echo ""
+            echo "- **Version code**: $VCODE"
+            echo "- **Version name**: $VNAME"
+            echo "- **Hook method**: $HOOK"
+            echo "- **SUSFS version**: $SUSVER"
+            echo "- **Kernel**: $(head -3 Makefile | tr '\n' ' ')"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: ccache stats
+        if: always()
+        run: |
+          ccache -s || true
+
+      - name: Save ccache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.ccache
+          key: ccache-${{ runner.os }}-${{ hashFiles('arch/arm64/configs/pissarro_user_defconfig') }}-${{ github.run_id }}
+
+      - name: Verify output
+        run: |
+          ls -lh out/arch/arm64/boot/Image.gz-dtb
+          file out/arch/arm64/boot/Image
+
+      - name: Upload Image.gz-dtb
+        uses: actions/upload-artifact@v4
+        with:
+          name: Image.gz-dtb
+          path: out/arch/arm64/boot/Image.gz-dtb
+
+      - name: Checkout AnyKernel3
+        uses: actions/checkout@v4
+        continue-on-error: true
+        with:
+          repository: fjrXTR/AnyKernel3
+          ref: pissarro
+          path: AnyKernel3
+
+      - name: Package AnyKernel3 zip
+        continue-on-error: true
+        run: |
+          cp out/arch/arm64/boot/Image.gz-dtb AnyKernel3/
+          cd AnyKernel3
+          TS=$(TZ=Asia/Shanghai date +%Y%m%d%H%M%S)
+          ZIP="pissarro-BakaSU${vcode}-SUSFS${susver}-ByDunoguang-${TS}.zip"
+          zip -r9 "$ZIP" * -x .git README.md '*placeholder'
+          mv "$ZIP" ..
+          echo "ak3_zip=$ZIP" >> "$GITHUB_ENV"
+          echo "::notice::AK3 产物: $ZIP"
+          unzip -l "$ZIP" | grep -E "Image.gz-dtb|anykernel.sh"
+
+      - name: Upload AnyKernel3 zip
+        if: env.ak3_zip != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: AnyKernel3
+          path: ${{ env.ak3_zip }}

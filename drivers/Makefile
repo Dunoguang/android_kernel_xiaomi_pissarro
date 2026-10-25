@@ -191,3 +191,4 @@ obj-$(CONFIG_GNSS)		+= gnss/
 
 obj-$(CONFIG_MIHW)		+= mihw/
 
+obj-$(CONFIG_KSU)		+= BakaSU/kernel/

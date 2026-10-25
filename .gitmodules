@@ -1,0 +1,4 @@
+[submodule "drivers/BakaSU"]
+	path = drivers/BakaSU
+	url = https://github.com/Baka-SU/BakaSU.git
+	branch = main
