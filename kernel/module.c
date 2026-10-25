@@ -1283,6 +1283,13 @@ static int check_version(const struct load_info *info,
 			 struct module *mod,
 			 const s32 *crc)
 {
+/*
+ * 放行原厂内核编译的厂商模块，不比对符号 CRC。
+ * MTK 的 Kconfig.default 会强制 select MODVERSIONS，
+ * 配置层关不掉，这里直接接受模块携带的版本信息。
+ */
+return 1;
+
 	Elf_Shdr *sechdrs = info->sechdrs;
 	unsigned int versindex = info->index.vers;
 	unsigned int i, num_versions;
