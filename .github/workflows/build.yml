@@ -122,6 +122,12 @@ jobs:
           name: Image.gz-dtb
           path: out/arch/arm64/boot/Image.gz-dtb
 
+      - name: Upload System.map
+        uses: actions/upload-artifact@v4
+        with:
+          name: System.map
+          path: out/System.map
+
       - name: Checkout AnyKernel3
         uses: actions/checkout@v4
         continue-on-error: true
