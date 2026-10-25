@@ -51,30 +51,33 @@ jobs:
       - name: Setup toolchain (proton-clang)
         run: |
           git clone --depth=1 https://github.com/kdrag0n/proton-clang clang
-          echo "$PWD/clang/bin" >> "$GITHUB_PATH"
-          export PATH="$PWD/clang/bin:$PATH"
-          clang --version | head -1
+          # 不把 clang/bin 加进 PATH, 它的旧 ld 会顶掉系统 ld, 导致 HOSTCC 编 fixdep 时
+          # 报 unknown type .relr.dyn。全部用绝对路径引用。
+          echo "CLANG_DIR=$PWD/clang/bin" >> "$GITHUB_ENV"
+          "$PWD/clang/bin/clang" --version | head -1
           ccache -M 4G
           ccache -z
 
       - name: Generate .config
         run: |
-          make O=out ARCH=arm64 CC="ccache clang" CROSS_COMPILE=aarch64-linux-gnu- pissarro_user_defconfig
-          scripts/config --file out/.config --enable CONFIG_KSU
-          scripts/config --file out/.config --enable CONFIG_KSU_SUSFS
-          scripts/config --file out/.config --enable CONFIG_KALLSYMS_ALL
-          make O=out ARCH=arm64 CC="ccache clang" CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
+          make O=out ARCH=arm64 CC="ccache $CLANG_DIR/clang" CROSS_COMPILE=aarch64-linux-gnu- pissarro_user_defconfig
+          make O=out ARCH=arm64 CC="ccache $CLANG_DIR/clang" CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
           grep -E "^CONFIG_(KSU|KSU_SUSFS|KALLSYMS_ALL|ARCH_MTK_PROJECT)" out/.config
 
       - name: Build kernel
         run: |
           set -o pipefail
           make -j$(nproc) O=out ARCH=arm64 \
-            CC="ccache clang" \
+            CC="ccache $CLANG_DIR/clang" \
             CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-gnu- \
-            LD=ld.lld AS=llvm-as AR=llvm-ar NM=llvm-nm \
-            OBJCOPY=llvm-objcopy OBJDUMP=llvm-objdump STRIP=llvm-strip \
+            LD="$CLANG_DIR/ld.lld" \
+            AS="$CLANG_DIR/llvm-as" \
+            AR="$CLANG_DIR/llvm-ar" \
+            NM="$CLANG_DIR/llvm-nm" \
+            OBJCOPY="$CLANG_DIR/llvm-objcopy" \
+            OBJDUMP="$CLANG_DIR/llvm-objdump" \
+            STRIP="$CLANG_DIR/llvm-strip" \
             KCFLAGS="-Wno-error=implicit-function-declaration -Wno-error=incompatible-pointer-types -Wno-error=int-conversion" \
             CONFIG_SECTION_MISMATCH_WARN_ONLY=y \
             Image.gz-dtb 2>&1 | tee /tmp/build.log
@@ -94,7 +97,6 @@ jobs:
             echo "- **Version name**: $VNAME"
             echo "- **Hook method**: $HOOK"
             echo "- **SUSFS version**: $SUSVER"
-            echo "- **Kernel**: $(head -3 Makefile | tr '\n' ' ')"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: ccache stats
