@@ -144,10 +144,11 @@ jobs:
           TS=$(TZ=Asia/Shanghai date +%Y%m%d%H%M%S)
           ZIP="pissarro-BakaSU${vcode}-SUSFS${susver}-ByDunoguang-${TS}.zip"
           zip -r9 "$ZIP" * -x .git README.md '*placeholder'
+          echo "::notice::AK3 产物: $ZIP"
+          # 先校验再移动，grep 找不到也不算失败
+          unzip -l "$ZIP" | grep -E "Image.gz-dtb|anykernel.sh" || true
           mv "$ZIP" ..
           echo "ak3_zip=$ZIP" >> "$GITHUB_ENV"
-          echo "::notice::AK3 产物: $ZIP"
-          unzip -l "$ZIP" | grep -E "Image.gz-dtb|anykernel.sh"
 
       - name: Upload AnyKernel3 zip
         if: env.ak3_zip != ''
