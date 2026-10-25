@@ -18,13 +18,7 @@
 #include <linux/pagemap.h>
 #include <linux/compat.h>
 
-#include <linux/uaccess.h>
-#include <asm/unistd.h>
-
-#ifdef CONFIG_KSU_SUSFS
-extern int filename_lookup(int dfd, struct filename *name, unsigned flags,
-			struct path *path, struct path *root);
-#endif
+#include "internal.h"
 
 #ifdef CONFIG_KSU_SUSFS
 #include <linux/susfs_def.h>

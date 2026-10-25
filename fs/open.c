@@ -12,14 +12,6 @@
 #include <linux/module.h>
 #include <linux/tty.h>
 #include <linux/namei.h>
-#ifdef CONFIG_KSU_SUSFS
-extern int filename_lookup(int dfd, struct filename *name, unsigned flags,
-			struct path *path, struct path *root);
-#endif
-
-#ifdef CONFIG_KSU_SUSFS
-#include <linux/susfs_def.h>
-#endif
 #include <linux/backing-dev.h>
 #include <linux/capability.h>
 #include <linux/securebits.h>
@@ -39,6 +31,9 @@ extern int filename_lookup(int dfd, struct filename *name, unsigned flags,
 #include <linux/ima.h>
 #include <linux/dnotify.h>
 #include <linux/compat.h>
+#ifdef CONFIG_KSU_SUSFS
+#include <linux/susfs_def.h>
+#endif
 
 #include "internal.h"
 
@@ -146,9 +141,6 @@ EXPORT_SYMBOL_GPL(vfs_truncate);
 static long do_sys_truncate(const char __user *pathname, loff_t length)
 {
 	unsigned int lookup_flags = LOOKUP_FOLLOW;
-#ifdef CONFIG_KSU_SUSFS
-struct filename *fname = NULL;
-#endif
 	struct path path;
 	int error;
 
@@ -365,17 +357,17 @@ SYSCALL_DEFINE4(fallocate, int, fd, int, mode, loff_t, offset, loff_t, len)
 	return error;
 }
 
+#ifdef CONFIG_KSU_SUSFS
+extern bool __ksu_is_allow_uid_for_current(uid_t uid);
+extern int ksu_handle_faccessat(int *dfd, struct filename **filename, int *mode,
+			int *__unused_flags);
+#endif
+
 /*
  * access() needs to use the real uid/gid, not the effective uid/gid.
  * We do this by temporarily clearing all FS-related capabilities and
  * switching the fsuid/fsgid around to the real ones.
  */
-#ifdef CONFIG_KSU_SUSFS
-extern bool __ksu_is_allow_uid_for_current(uid_t uid);
-extern int ksu_handle_faccessat(int *dfd, struct filename **filename, int *mode,
-int *__unused_flags);
-#endif
-
 SYSCALL_DEFINE3(faccessat, int, dfd, const char __user *, filename, int, mode)
 {
 	const struct cred *old_cred;
@@ -385,7 +377,7 @@ SYSCALL_DEFINE3(faccessat, int, dfd, const char __user *, filename, int, mode)
 	struct vfsmount *mnt;
 	int res;
 	unsigned int lookup_flags = LOOKUP_FOLLOW;
-	#ifdef CONFIG_KSU_SUSFS
+#ifdef CONFIG_KSU_SUSFS
 	struct filename *fname = NULL;
 	#endif
 
@@ -429,8 +421,8 @@ SYSCALL_DEFINE3(faccessat, int, dfd, const char __user *, filename, int, mode)
 	override_cred->non_rcu = 1;
 
 	old_cred = override_creds(override_cred);
-	retry:
-	#ifdef CONFIG_KSU_SUSFS
+retry:
+#ifdef CONFIG_KSU_SUSFS
 	fname = getname_flags(filename, lookup_flags, NULL);
 
 	if (likely(susfs_is_current_proc_no_su()))
