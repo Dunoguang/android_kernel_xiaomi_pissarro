@@ -138,7 +138,7 @@ jobs:
       - name: Package AnyKernel3 zip
         continue-on-error: true
         run: |
-          cp out/arch/arm64/boot/Image.gz-dtb AnyKernel3/
+          cp out/arch/arm64/boot/Image.gz AnyKernel3/
           cp .github/anykernel-pissarro.sh AnyKernel3/anykernel.sh
           cd AnyKernel3
           TS=$(TZ=Asia/Shanghai date +%Y%m%d%H%M%S)

@@ -3036,6 +3036,12 @@ static int check_modinfo(struct module *mod, struct load_info *info, int flags)
 	if (flags & MODULE_INIT_IGNORE_VERMAGIC)
 		modmagic = NULL;
 
+	/*
+	 * 放行原厂内核编译的厂商模块：MIUI 的 .ko 带着原厂 vermagic，
+	 * 和本内核版本串必然不同，这里不再拿它当加载条件。
+	 */
+	modmagic = NULL;
+
 	/* This is allowed: modprobe --force will invalidate it. */
 	if (!modmagic) {
 		err = try_to_force_load(mod, "bad vermagic");
